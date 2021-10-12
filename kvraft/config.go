@@ -4,7 +4,7 @@ import "6.824/labrpc"
 import "testing"
 import "os"
 
-// import "log"
+import "log"
 import crand "crypto/rand"
 import "math/big"
 import "math/rand"
