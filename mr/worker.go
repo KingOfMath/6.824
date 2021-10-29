@@ -1,12 +1,15 @@
 package mr
 
-import "fmt"
+import (
+	"fmt"
+	"io/ioutil"
+	"os"
+)
 import "log"
 import "net/rpc"
 import "hash/fnv"
 
-
-//
+// KeyValue
 // Map functions return a slice of KeyValue.
 //
 type KeyValue struct {
@@ -24,41 +27,46 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-
-//
+// Worker
 // main/mrworker.go calls this function.
 //
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
+	reply := WorkerCaller()
+	switch reply.taskState.TaskType {
+	case MapTask:
+		doMapf(mapf, &reply)
+	case ReduceTask:
+		doReducef(reducef, &reply)
+	}
+}
 
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
+func doMapf(mapf func(string, string) []KeyValue, reply *RpcReply) {
+	filename := reply.taskState.TaskName
+	file, _ := os.Open(filename)
+	content, _ := ioutil.ReadAll(file)
+	defer file.Close()
+	kvs := mapf(filename, string(content))
 
 }
 
-//
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-//
-func CallExample() {
+func doReducef(reducef func(string, []string) string, reply *RpcReply) {
+
+}
+
+// WorkerCaller RPC方法
+func WorkerCaller() RpcReply {
 
 	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
+	args := RpcArgs{}
+	reply := RpcReply{}
 
 	// send the RPC request, wait for the reply.
-	call("Coordinator.Example", &args, &reply)
+	call("Coordinator.RpcHandler", &args, &reply)
+	fmt.Printf("reply.Y %v\n", reply.taskState)
 
-	// reply.Y should be 100.
-	fmt.Printf("reply.Y %v\n", reply.Y)
+	return reply
 }
 
 //
@@ -82,4 +90,13 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 
 	fmt.Println(err)
 	return false
+}
+
+func Partition(kvs []KeyValue, nReduce int) [][]KeyValue {
+	hashKvs := make([][]KeyValue, nReduce)
+	for _, kv := range kvs {
+		v := ihash(kv.Key) % nReduce
+		hashKvs[v] = append(hashKvs[v], kv)
+	}
+	return hashKvs
 }
