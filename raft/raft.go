@@ -39,12 +39,27 @@ import (
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	index := -1
-	term := -1
-	isLeader := true
+	term := rf.currentTerm
+	isLeader := rf.IsLeader()
 
-	// Your code here (2B).
+	// 每个Leader首先开始一个新的log块
+	if isLeader {
+		index = rf.getLastLogIdx() + 1
+		log := Log{
+			Term:    term,
+			Index:   index,
+			Command: command,
+		}
+		rf.log = append(rf.log, log)
 
+		// 更新自己的index
+		rf.matchIndex[rf.me] = index
+		rf.nextIndex[rf.me] = index + 1
+	}
 	return index, term, isLeader
 }
 
@@ -76,6 +91,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.commitIndex = 0
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
+	rf.applyCh = applyCh
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())

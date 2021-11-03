@@ -1,5 +1,11 @@
 package raft
 
+import (
+	"math/rand"
+	"sync/atomic"
+	"time"
+)
+
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
@@ -23,6 +29,18 @@ func (rf *Raft) getLastLogTerm() int {
 		return -1
 	}
 	return rf.log[index].Term
+}
+
+func (rf *Raft) getPrevLogIdx(idx int) int {
+	return rf.nextIndex[idx] - 1
+}
+
+func (rf *Raft) getPrevLogTerm(idx int) int {
+	prevLogIndex := rf.getPrevLogIdx(idx)
+	if prevLogIndex < 0 {
+		return -1
+	}
+	return rf.log[prevLogIndex].Term
 }
 
 func (rf *Raft) IsLeader() bool {
@@ -54,7 +72,16 @@ func (rf *Raft) BecomeFollower(newTerm int) {
 // Leader
 func (rf *Raft) BecomeLeader() {
 	rf.state = Leader
-
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
+	for i := 0; i < len(rf.peers); i++ {
+		if i != rf.me {
+			// [第一次更新nextIndex]
+			// 每个节点下一次应该接收的日志的index（初始化为日志长度）
+			rf.nextIndex[i] = rf.getLastLogIdx() + 1
+			rf.matchIndex[i] = 0
+		}
+	}
 }
 
 // format name
@@ -69,4 +96,20 @@ func (rf *Raft) formatName(state int) string {
 	default:
 		panic("[Error] Wrong state!")
 	}
+}
+
+// Kill 进程相关
+func (rf *Raft) Kill() {
+	atomic.StoreInt32(&rf.dead, 1)
+}
+
+func (rf *Raft) killed() bool {
+	z := atomic.LoadInt32(&rf.dead)
+	return z == 1
+}
+
+// 重置时间
+func (rf *Raft) reset() {
+	rf.electionTimeout.Stop()
+	rf.electionTimeout.Reset(time.Duration(rand.Intn(150)+300) * time.Millisecond)
 }

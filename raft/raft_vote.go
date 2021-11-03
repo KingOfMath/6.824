@@ -2,7 +2,6 @@ package raft
 
 import (
 	"sync/atomic"
-	"time"
 )
 
 // 选举循环,用两个time.Timer接收
@@ -112,87 +111,15 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
 		// 日志更新才投票
-		//if args.LastLogTerm > rf.getLastLogTerm() ||
-		//	(args.LastLogTerm == rf.getLastLogTerm() && args.LastLogIndex >= rf.getLastLogIdx()) {
-		rf.votedFor = args.CandidateId
-		reply.VoteGranted = true
-		rf.state = Follower
-		// CASE3: 重置时间片
-		rf.reset()
-		//}
-	}
-	return
-}
-
-// broadcast appendEntries
-func (rf *Raft) broadcastHeartBeat() {
-
-	for {
-		rf.mu.Lock()
-		if rf.IsLeader() == false {
-			rf.mu.Unlock()
-			break
+		if args.LastLogTerm > rf.getLastLogTerm() ||
+			(args.LastLogTerm == rf.getLastLogTerm() && args.LastLogIndex >= rf.getLastLogIdx()) {
+			rf.votedFor = args.CandidateId
+			reply.VoteGranted = true
+			rf.state = Follower
+			// CASE3: 重置时间片
+			rf.reset()
 		}
-		args := &AppendEntriesArgs{
-			Term:     rf.currentTerm,
-			LeaderId: rf.me,
-		}
-		rf.mu.Unlock()
-
-		for i := range rf.peers {
-			// 跳过自己
-			if rf.me != i {
-				go func(idx int) {
-					reply := &AppendEntriesReply{}
-					ok := rf.sendAppendEntries(idx, args, reply)
-
-					if ok {
-						rf.mu.Lock()
-						defer rf.mu.Unlock()
-
-						if !rf.IsLeader() || rf.currentTerm != args.Term {
-							return
-						}
-
-						if reply.Term > rf.currentTerm {
-							rf.BecomeFollower(reply.Term)
-							return
-						}
-					}
-				}(i)
-			}
-		}
-		time.Sleep(time.Duration(100 * time.Millisecond))
-
 	}
-}
-
-// entries
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	reply.Term = rf.currentTerm
-	reply.Success = false
-
-	// 如果别人很菜，自己强，拒绝别人
-	if args.Term < rf.currentTerm {
-		return
-	}
-
-	// 如果自己比当前的Leader菜，可能自己还是Candicate或者Leader，当个follower
-	if args.Term >= rf.currentTerm {
-		rf.BecomeFollower(args.Term)
-	}
-
-	reply.Success = true
-	// CASE2: 重置时间片
-	rf.reset()
-}
-
-// 发送 entries
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) (ok bool) {
-	ok = rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return
 }
 

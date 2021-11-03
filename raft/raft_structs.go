@@ -34,6 +34,7 @@ const (
 	Follower = iota
 	Candidate
 	Leader
+	HeartBeatTimeout time.Duration = 100 * time.Millisecond
 )
 
 //
@@ -61,6 +62,8 @@ type Raft struct {
 	lastApplied int
 	nextIndex   []int
 	matchIndex  []int
+
+	applyCh chan ApplyMsg
 }
 
 type Log struct {
