@@ -48,20 +48,22 @@ type Raft struct {
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
-	currentTerm      int
-	votedFor         int
-	log              []Log
 	state            int
 	electionTimeout  *time.Timer
 	winVoteThreshold int32
 
+	// Persistent state on all servers.
+	currentTerm int
+	votedFor    int
+	log         []Log
+
+	// Volatile state on all servers.
 	commitIndex int
 	lastApplied int
-	nextIndex   []int
-	matchIndex  []int
+
+	// Volatile state on leaders.
+	nextIndex  []int
+	matchIndex []int
 
 	applyCh chan ApplyMsg
 }

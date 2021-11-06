@@ -37,7 +37,7 @@ func (rf *Raft) getPrevLogIdx(idx int) int {
 
 func (rf *Raft) getPrevLogTerm(idx int) int {
 	prevLogIndex := rf.getPrevLogIdx(idx)
-	if prevLogIndex < 0 {
+	if prevLogIndex < 0 || prevLogIndex >= len(rf.log) {
 		return -1
 	}
 	return rf.log[prevLogIndex].Term

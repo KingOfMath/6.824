@@ -23,17 +23,20 @@ func (rf *Raft) broadcastHeartBeat() {
 				go func(idx int) {
 
 					rf.mu.Lock()
-					args := &AppendEntriesArgs{
-						Term:     rf.currentTerm,
-						LeaderId: rf.me,
-						// 传入NextIndex之前的Log状态
-						PrevLogIndex: rf.getPrevLogIdx(idx),
-						PrevLogTerm:  rf.getPrevLogTerm(idx),
-						// 1. 拼接slice要把数组用...打散
-						// 2. 传入Leader的需要复制的log
-						Entries:      append(make([]Log, 0), rf.log[rf.nextIndex[idx]:]...),
-						LeaderCommit: rf.commitIndex,
+					args := &AppendEntriesArgs{}
+
+					args.Term = rf.currentTerm
+					args.LeaderId = rf.me
+					// 传入NextIndex之前的Log状态
+					args.PrevLogIndex = rf.getPrevLogIdx(idx)
+					args.PrevLogTerm = rf.getPrevLogTerm(idx)
+					// 1. 拼接slice要把数组用...打散
+					// 2. 传入Leader的需要复制的log
+					if rf.nextIndex[idx] <= rf.getLastLogIdx() {
+						args.Entries = append(make([]Log, 0), rf.log[rf.nextIndex[idx]:]...)
 					}
+					args.LeaderCommit = rf.commitIndex
+
 					rf.mu.Unlock()
 
 					reply := &AppendEntriesReply{}
@@ -48,13 +51,15 @@ func (rf *Raft) broadcastHeartBeat() {
 
 					if reply.Term > rf.currentTerm {
 						rf.BecomeFollower(reply.Term)
+						rf.persist()
 						return
 					}
 
 					if reply.Success {
 						// update nextIndex and matchIndex for follower
 						// follower的index应该被强制和leader同步
-						rf.matchIndex[idx] = rf.getLastLogIdx()
+						// 考虑到不稳定的网络环境,rf.nextIndex可能被其他rpc请求修改过，所以用这种方式
+						rf.matchIndex[idx] = rf.getPrevLogIdx(idx) + len(args.Entries)
 						rf.nextIndex[idx] = rf.matchIndex[idx] + 1
 						// update commitIndex
 						rf.commitN()
@@ -75,6 +80,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
+
 	reply.Term = rf.currentTerm
 	reply.Success = false
 

@@ -55,6 +55,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 			Command: command,
 		}
 		rf.log = append(rf.log, log)
+		rf.persist()
 
 		// 更新自己的index
 		rf.matchIndex[rf.me] = index

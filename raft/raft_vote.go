@@ -25,10 +25,10 @@ func (rf *Raft) startEventLoop() {
 
 // 选举具体逻辑
 func (rf *Raft) startElection() {
-
 	// 以参选人开始选举
 	rf.mu.Lock()
 	rf.BecomeCandidate()
+	rf.persist()
 	rf.mu.Unlock()
 
 	// CASE1: 重置时间片
@@ -61,6 +61,7 @@ func (rf *Raft) broadcastRequestVote() {
 					// lock
 					rf.mu.Lock()
 					defer rf.mu.Unlock()
+					defer rf.persist()
 
 					if rf.IsCandidate() == false {
 						return
@@ -82,7 +83,6 @@ func (rf *Raft) broadcastRequestVote() {
 
 							// 立即发送心跳，让大家变follower
 							go rf.broadcastHeartBeat()
-
 						}
 					}
 				}
@@ -95,6 +95,7 @@ func (rf *Raft) broadcastRequestVote() {
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	reply.Term = rf.currentTerm
 	reply.VoteGranted = false
