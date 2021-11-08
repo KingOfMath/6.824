@@ -65,7 +65,9 @@ type Raft struct {
 	nextIndex  []int
 	matchIndex []int
 
-	applyCh chan ApplyMsg
+	snapshotLastIndex int
+	snapshotLastTerm  int
+	applyCh           chan ApplyMsg
 }
 
 type Log struct {
@@ -105,4 +107,18 @@ type RequestVoteArgs struct {
 type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
+}
+
+// Part 7
+// Snapshot
+type InstallSnapshotArgs struct {
+	Term              int
+	LeaderId          int
+	LastIncludedIndex int
+	LastIncludedTerm  int
+	Data              []byte
+}
+
+type InstallSnapshotReply struct {
+	Term int
 }
