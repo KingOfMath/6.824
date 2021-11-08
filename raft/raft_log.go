@@ -15,58 +15,24 @@ func (rf *Raft) broadcastHeartBeat() {
 			rf.mu.Unlock()
 			break
 		}
+		// log[0]为lastIncludedTerm日志，这样方便下标运算
+		lastIncludedIdx := rf.getLastIncludedIdx()
 		rf.mu.Unlock()
 
 		for i := range rf.peers {
 			// 跳过自己
 			if rf.me != i {
 				go func(idx int) {
-
-					rf.mu.Lock()
-					args := &AppendEntriesArgs{}
-
-					args.Term = rf.currentTerm
-					args.LeaderId = rf.me
-					// 传入NextIndex之前的Log状态
-					args.PrevLogIndex = rf.getPrevLogIdx(idx)
-					args.PrevLogTerm = rf.getPrevLogTerm(idx)
-					// 1. 拼接slice要把数组用...打散
-					// 2. 传入Leader的需要复制的log
-					if rf.nextIndex[idx] <= rf.getLastLogIdx() {
-						args.Entries = append(make([]Log, 0), rf.log[rf.nextIndex[idx]:]...)
-					}
-					args.LeaderCommit = rf.commitIndex
-
-					rf.mu.Unlock()
-
-					reply := &AppendEntriesReply{}
-					ok := rf.sendAppendEntries(idx, args, reply)
-
-					rf.mu.Lock()
-					defer rf.mu.Unlock()
-
-					if !ok || !rf.IsLeader() || rf.currentTerm != args.Term {
-						return
-					}
-
-					if reply.Term > rf.currentTerm {
-						rf.BecomeFollower(reply.Term)
-						rf.persist()
-						return
-					}
-
-					if reply.Success {
-						// update nextIndex and matchIndex for follower
-						// follower的index应该被强制和leader同步
-						// 考虑到不稳定的网络环境,rf.nextIndex可能被其他rpc请求修改过，所以用这种方式
-						rf.matchIndex[idx] = rf.getPrevLogIdx(idx) + len(args.Entries)
-						rf.nextIndex[idx] = rf.matchIndex[idx] + 1
-						// update commitIndex
-						rf.commitN()
-						return
+					// 假如比snapshot块的index大，那么往后同步日志
+					// 否则使用snapshot
+					if rf.nextIndex[idx] > lastIncludedIdx {
+						args := rf.getAppendEntriesArgs(idx)
+						reply := &AppendEntriesReply{}
+						rf.sendAppendEntries(idx, args, reply)
 					} else {
-						// decrement nextIndex and retry
-						rf.nextIndex[idx] = reply.NextIndex
+						args := rf.getInstallSnapshotArgs(idx)
+						reply := &InstallSnapshotReply{}
+						rf.sendInstallSnapshot(idx, args, reply)
 					}
 				}(i)
 			}
@@ -136,6 +102,32 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // 发送 entries
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) (ok bool) {
 	ok = rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if !ok || !rf.IsLeader() || rf.currentTerm != args.Term {
+		return
+	}
+
+	if reply.Term > rf.currentTerm {
+		rf.BecomeFollower(reply.Term)
+		rf.persist()
+		return
+	}
+
+	if reply.Success {
+		// update nextIndex and matchIndex for follower
+		// follower的index应该被强制和leader同步
+		// 考虑到不稳定的网络环境,rf.nextIndex可能被其他rpc请求修改过，所以用这种方式
+		rf.matchIndex[server] = rf.getPrevLogIdx(server) + len(args.Entries)
+		rf.nextIndex[server] = rf.matchIndex[server] + 1
+		// update commitIndex
+		rf.commitN()
+		return
+	} else {
+		// decrement nextIndex and retry
+		rf.nextIndex[server] = reply.NextIndex
+	}
 	return
 }
 
@@ -170,4 +162,25 @@ func (rf *Raft) applyMsg() {
 		}
 		rf.applyCh <- msg
 	}
+}
+
+func (rf *Raft) getAppendEntriesArgs(idx int) *AppendEntriesArgs {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	args := &AppendEntriesArgs{}
+
+	args.Term = rf.currentTerm
+	args.LeaderId = rf.me
+	// 传入NextIndex之前的Log状态
+	args.PrevLogIndex = rf.getPrevLogIdx(idx)
+	args.PrevLogTerm = rf.getPrevLogTerm(idx)
+	// 1. 拼接slice要把数组用...打散
+	// 2. 传入Leader的需要复制的log
+	if rf.nextIndex[idx] <= rf.getLastLogIdx() {
+		args.Entries = append(make([]Log, 0), rf.log[rf.nextIndex[idx]:]...)
+	}
+	args.LeaderCommit = rf.commitIndex
+
+	return args
 }

@@ -1,6 +1,8 @@
 package raft
 
 import (
+	"6.824/labgob"
+	"bytes"
 	"math/rand"
 	"sync/atomic"
 	"time"
@@ -31,6 +33,7 @@ func (rf *Raft) getLastLogTerm() int {
 	return rf.log[index].Term
 }
 
+// 获取下一次要同步的logIndex
 func (rf *Raft) getPrevLogIdx(idx int) int {
 	return rf.nextIndex[idx] - 1
 }
@@ -41,6 +44,20 @@ func (rf *Raft) getPrevLogTerm(idx int) int {
 		return -1
 	}
 	return rf.log[prevLogIndex].Term
+}
+
+// 获取snapshot
+func (rf *Raft) getLastIncludedIdx() int {
+	return rf.log[0].Index
+}
+
+func (rf *Raft) getLastIncludedTerm() int {
+	return rf.log[0].Term
+}
+
+// 获取除去snapshot的真实idx
+func (rf *Raft) getRealLogIdx(idx int) int {
+	return idx - rf.getLastIncludedIdx()
 }
 
 func (rf *Raft) IsLeader() bool {
@@ -112,4 +129,35 @@ func (rf *Raft) killed() bool {
 func (rf *Raft) reset() {
 	rf.electionTimeout.Stop()
 	rf.electionTimeout.Reset(time.Duration(rand.Intn(150)+300) * time.Millisecond)
+}
+
+//
+// save Raft's persistent state to stable storage, where it can later be retrieved after a crash and restart.
+//
+func (rf *Raft) persist() {
+	data := rf.getPersistState()
+	rf.persister.SaveRaftState(data)
+}
+
+func (rf *Raft) getPersistState() (data []byte) {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.log)
+	data = w.Bytes()
+	return
+}
+
+// restore previously persisted state.
+func (rf *Raft) readPersist(data []byte) {
+	if data == nil || len(data) < 1 { // bootstrap without any state?
+		return
+	}
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	// TODO: 需要引用地址
+	d.Decode(&rf.currentTerm)
+	d.Decode(&rf.votedFor)
+	d.Decode(&rf.log)
 }

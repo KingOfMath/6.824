@@ -106,3 +106,17 @@ type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
 }
+
+// Part 7
+// Snapshot
+type InstallSnapshotArgs struct {
+	Term              int
+	LeaderId          int
+	LastIncludedIndex int
+	LastIncludedTerm  int
+	Data              []byte
+}
+
+type InstallSnapshotReply struct {
+	Term int
+}
